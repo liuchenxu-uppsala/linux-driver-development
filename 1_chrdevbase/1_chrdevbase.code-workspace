@@ -6,7 +6,10 @@
 	],
 	"settings": {
 		"files.associations": {
-			"module.h": "c"
+			"module.h": "c",
+			"ide.h": "c",
+			"types.h": "c",
+			"kernel.h": "c"
 		}
 	}
 }
