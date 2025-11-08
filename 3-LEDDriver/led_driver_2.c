@@ -8,15 +8,114 @@
 #include <linux/delay.h>
 #include <linux/ide.h>
 #include <linux/init.h>
-static int __init chrdevbase_init(void){
-    printk("chrdevbase_init");
-    //register_chrdev(MAJOR,DRIVER_NAME,&chrdevbase_fops);
+
+#define MAJOR_LED 200
+#define DRIVER_NAME_LED "led_driver"
+#define CCG_R1 0x020C406C //gpio1 clock 时钟使能
+static void __iomem *ccg_r1_iomem;
+#define SW_MUX_CTL_PAD_GPIO1_IO03 0X020E0068 //GPIO复用
+static void __iomem *sw_mux_ctl_pad_gpio1_io03_iomem;
+#define SW_PAD_CTL_PAD_GPIO1_IO03 0x020E02F4
+static void __iomem *sw_pad_ctl_pad_gpio1_io03_iomem;
+#define GPIO1_GDIR 0x0209C004
+static void __iomem  *gdir_gpio1_io03_iomem;
+#define GPIO_DR 0x0209C000
+static void __iomem *dr_gpio1_io03_iomem;
+
+#define LED_ON 1
+#define LED_OFF 0
+
+static struct file_operations led_driver_fops;
+static void init_gpio(void);
+
+static int __init led_driver_init(void){
+    printk("led_driver_init");
+    register_chrdev(MAJOR_LED,DRIVER_NAME_LED,&led_driver_fops);
     return 0;
 }
 
-static void __exit chrdevbase_exit(void){
-    //unregister_chrdev(MAJOR,DRIVER_NAME);
-    printk("chrdevbase_exit");
+static void __exit led_driver_exit(void){
+    printk("led_driver_exit");
+    unregister_chrdev(MAJOR_LED,DRIVER_NAME_LED);
 }
-module_init(chrdevbase_init);
-module_exit(chrdevbase_exit);
+
+static void init_gpio() {
+    // CCG使能
+    ccg_r1_iomem = ioremap(CCG_R1,4);
+    u32 ccg_r1_clock = readl(ccg_r1_iomem);
+    ccg_r1_clock&=~(3<<26);
+    ccg_r1_clock |= (3<<26);
+    writel(ccg_r1_clock, ccg_r1_iomem);
+    // GPIO1_IO03复用
+    sw_mux_ctl_pad_gpio1_io03_iomem = ioremap(SW_MUX_CTL_PAD_GPIO1_IO03,4);
+    writel(5,sw_mux_ctl_pad_gpio1_io03_iomem);
+    //
+    sw_pad_ctl_pad_gpio1_io03_iomem = ioremap(SW_PAD_CTL_PAD_GPIO1_IO03,4);
+    writel(0X10B0,sw_pad_ctl_pad_gpio1_io03_iomem);
+    //配置输出
+    gdir_gpio1_io03_iomem = ioremap(GPIO1_GDIR,4);
+    u32 gdir_u32_value = readl(gdir_gpio1_io03_iomem);
+    gdir_u32_value &=~(1<<3);
+    gdir_u32_value |= (1<<3);
+    writel(gdir_u32_value,gdir_gpio1_io03_iomem);
+    // 配置LED关闭状态
+    dr_gpio1_io03_iomem = ioremap(GPIO_DR,4);
+    u32 dr_u32_value = readl(dr_gpio1_io03_iomem);
+    //dr_u32_value &=~(1<<3);
+    dr_u32_value |= (1<<3);
+    writel(dr_u32_value,dr_gpio1_io03_iomem);
+    //register_chrdev(MAJOR_LED,DRIVER_NAME_LED,&led_file_operations);
+}
+
+int open(struct inode * node, struct file * f) {
+    printk("open_led_driver");
+    // 进行设备的初始化
+    init_gpio();
+    return 0;
+}
+static ssize_t read(struct file * f, char __user * user_cache, size_t n, loff_t *l) {
+    return 0;
+}
+
+static void switch_led_status(unsigned char led_status) {
+    u32 dr_u32_value = readl(dr_gpio1_io03_iomem);
+    if (led_status == LED_OFF) {
+        // 设置为 1
+        dr_u32_value |= (1<<3);
+        writel(dr_u32_value,dr_gpio1_io03_iomem);
+    } else {
+        // 对应项设置为 0
+        dr_u32_value &=~(1<<3);
+        writel(dr_u32_value,dr_gpio1_io03_iomem);
+    }
+}
+
+static ssize_t write(struct file * f, const char __user * cache, size_t n, loff_t *l) {
+    char command[1];
+    unsigned long result = copy_from_user(&command[0],cache,1);
+    if (result < 0) {
+        printk(KERN_ERR "Error in copy_from_user");
+        return -1;
+    } else {
+        switch_led_status(command[0]);
+        return 0;
+    }
+}
+
+static int release(struct inode * node, struct file *f) {
+    printk("led_driver_release");
+    return 0;
+}
+
+static struct file_operations led_driver_fops = {
+    .owner = THIS_MODULE,
+    .read = read,
+    .write = write,
+    .open = open,
+    .release = release,
+};
+module_init(led_driver_init);
+module_exit(led_driver_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("ChenxuLiu");

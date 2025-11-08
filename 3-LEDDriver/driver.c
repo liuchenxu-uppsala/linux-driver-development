@@ -1,6 +1,7 @@
 //
 // Created by Chenx on 2025/11/4.
 //
+#include <stdio.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -28,7 +29,7 @@ static void __exit chrdevbase_exit(void){
     printk("chrdevbase_exit");
 }
 
-ssize_t read(struct file * file, char __user * user_cache, size_t n, loff_t *loff) {
+static ssize_t read(struct file * file, char __user * user_cache, size_t n, loff_t *loff) {
     int return_value = 0;
     memcpy(read_buffer,kerner_data,sizeof(kerner_data));
     return_value = copy_to_user(user_cache,read_buffer,n);
