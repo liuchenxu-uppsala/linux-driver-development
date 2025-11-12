@@ -32,7 +32,7 @@ typedef struct {
 } beep_driver_t;
 
 beep_driver_t beep_driver;
-struct file_operations beep_fops;
+static struct file_operations beep_fops;
 
 static void init_beep_driver(void) {
     beep_driver.dn = of_find_node_by_path("/gpio_beep");
@@ -48,14 +48,13 @@ static void init_beep_driver(void) {
     beep_driver.beep_device = *device_create(beep_driver.beep_class,NULL,beep_driver.dev,NULL,"beep_driver");
 }
 
-static int __init beep_driver_init(void){
-    printk("beep_driver_init");
-    init_beep_driver();
-    return 0;
-}
-
 static void __exit beep_driver_exit(void){
     printk("beep_driver_exit");
+    device_destroy(beep_driver.beep_class,beep_driver.dev);
+    class_destroy(beep_driver.beep_class);
+    cdev_del(&beep_driver.c_dev);
+    unregister_chrdev_region(beep_driver.dev,1);
+    gpio_free(beep_driver.beep_gpio);
 }
 
 static int open (struct inode *n, struct file *f) {
@@ -65,11 +64,6 @@ static int open (struct inode *n, struct file *f) {
 
 static int release(struct inode * n, struct file *f) {
     printk("beep_driver_release\n");
-    device_destroy(beep_driver.beep_class,beep_driver.dev);
-    class_destroy(beep_driver.beep_class);
-    cdev_del(&beep_driver.c_dev);
-    unregister_chrdev_region(beep_driver.dev,1);
-    gpio_free(beep_driver.beep_gpio);
     return 0;
 }
 
@@ -80,7 +74,7 @@ static ssize_t read(struct file * f, char __user * buffer, size_t n, loff_t *lo)
 static ssize_t write(struct file * f, const char __user * user_buffer, size_t n, loff_t *lo) {
     printk("beep_driver_write\n");
     char command[1];
-    copy_from_user(&command[0],user_buffer,1);
+    copy_from_user(&command,user_buffer,1);
     if (command[0]==BEEP_ON) {
         gpio_set_value(beep_driver.beep_gpio,1);
     } else {
@@ -89,7 +83,7 @@ static ssize_t write(struct file * f, const char __user * user_buffer, size_t n,
 }
 
 
-struct file_operations beep_fops = {
+static struct file_operations beep_fops = {
     .owner = THIS_MODULE,
     .open = open,
     .release = release,
@@ -97,6 +91,11 @@ struct file_operations beep_fops = {
     .write =  write,
 };
 
+static int __init beep_driver_init(void){
+    printk("beep_driver_init");
+    init_beep_driver();
+    return 0;
+}
 
 module_init(beep_driver_init);
 module_exit(beep_driver_exit);
